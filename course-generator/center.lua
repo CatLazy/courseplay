@@ -499,8 +499,34 @@ function splitCenterIntoBlocks( tracks, width )
 		return b
 	end
 	
+	--- We may end up with a bogus block if the island headland intersects the field 
+	-- headland. This bogus block will be between the outermost island headland and the
+	-- innermost field headland. Try to remove those intersection points.
+	-- most likely can happen with a field headland only on non-convex fields but not sure
+	-- how to handle that case.
+	function cleanupIntersections( is )
+		local onIsland = false
+		for i = 2, #is do
+			if not onIsland and is[ i - 1 ].islandId then
+				is[ i - 1 ].deleteThis = true
+				is[ i ].deleteThis = true
+				onIsland = true
+			elseif not onIsland and not is[ i - 1 ].islandId and is[ i ].islandId then
+				onIsland = true
+			elseif onIsland and not is[ i ].islandId then
+				onIsland = false
+			end
+		end
+		for i = #is, 1, -1 do
+			if is[ i ].deleteThis then
+				table.remove( is, i ) 
+			end
+		end
+	end  
+	
 	function splitTrack( t )
 		local splitTracks = {}
+		cleanupIntersections( t.intersections )
 		if #t.intersections % 2 ~= 0 or #t.intersections < 2 then
 			courseGenerator.debug( 'Found track with odd number (%d) of intersections', #t.intersections )
 			table.remove( t.intersections, #t.intersections )
@@ -564,6 +590,7 @@ function splitCenterIntoBlocks( tracks, width )
 		-- number of track sections after splitting this track. Will be exactly one
 		-- if there are no obstacles in the field.
 		currentNumberOfSections = math.floor( #t.intersections / 2 )
+
 		if #t.intersections ~= previousNumberOfIntersections or startNewBlock then
 			-- start a new block, first save the current ones if exist
 			previousNumberOfIntersections = #t.intersections
