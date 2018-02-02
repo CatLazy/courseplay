@@ -180,7 +180,8 @@ function generateTracks( polygon, islands, width, nTracksToSkip, extendTracks, a
 	  end
 	  linkParallelTracks( track, block.tracksWithWaypoints, 
       isCornerOnTheBottom( block.entryCorner ), isCornerOnTheLeft( block.entryCorner ), nTracksToSkip, continueWithTurn ) 
-    addRidgeMarkers( track )
+    fixLongTurns( track, width )
+	  addRidgeMarkers( track )
   end
 
   -- now rotate and translate everything back to the original coordinate system
@@ -681,6 +682,45 @@ function removeRidgeMarkersFromLastTrack( course, isReversed )
   end
 end
 
+--- Fix long turns. These show up when the up/down rows intersect the headland at a 
+-- low angle, the turn end may be far away from the start. The turn system can handle these
+-- fine but the turn maneuvers are slow and we may end up reversing hundreds of meters.
+-- This function makes sure the turn start and end waypoints are close enough
+function fixLongTurns( track, width )
+	local i = 1
+	track:calculateData()
+	while i < #track - 1 do
+		if track[ i ].turnStart and track[ i + 1 ].turnEnd then
+			local d = getDistanceBetweenPoints( track[ i ], track[ i + 1 ])
+			if d > 2 * width then
+				-- we'll add a new point between the start and end
+				local newPoint
+				-- move to about width distance 
+				local moveDistance = d - width
+				if inFrontOf( track[ i + 1 ], track[ i ]) then
+					newPoint = copyPoint( track[ i ])
+					-- turn end is in front of turn start so move the turn start closer 
+					newPoint.x, newPoint.y = getPointBetween( track[ i ], track[ i + 1 ], moveDistance )
+					-- the new point is the turn start
+					newPoint.turnStart = true
+					-- old turn start is not turn start anymore
+					track[ i ].turnStart = nil
+				else
+					-- turn end is behind the turn start, move turn end closer 
+					newPoint = copyPoint( track[ i + 1 ])
+					newPoint.x, newPoint.y = getPointBetween( track[ i + 1 ], track[ i ], moveDistance )
+					newPoint.turnEnd = true
+					track[ i + 1 ].turnEnd = nil
+				end
+				courseGenerator.debug( "Fixing a long (%.0fm) turn on track %d.", d, track[ i ].originalTrackNumber )
+				-- insert the new point 
+				table.insert( track, i + 1, newPoint )
+				i = i + 1
+			end
+		end
+		i = i + 1
+	end
+end
 -- We are using a genetic algorithm to find the optimum sequence of the blocks to work on.
 -- In case of a non-convex field or a field with island(s) in it, the field is divided into
 -- multiple areas (blocks) which are covered by the up/down rows independently. 
